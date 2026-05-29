@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../app/theme/day_theme.dart';
 import '../models/models.dart';
+import 'daily_tree_widget.dart';
 
 class CalendarDayCell extends StatelessWidget {
   const CalendarDayCell({
@@ -11,12 +11,14 @@ class CalendarDayCell extends StatelessWidget {
     required this.record,
     required this.isToday,
     required this.onTap,
+    this.onLongPress,
   });
 
   final DateTime date;
   final DailyRecord? record;
   final bool isToday;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +46,7 @@ class CalendarDayCell extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         margin: const EdgeInsets.all(2),
         decoration: BoxDecoration(
@@ -86,9 +89,12 @@ class CalendarDayCell extends StatelessWidget {
                     : r.isFullCrown
                         ? 0.45
                         : 0.75,
-                child: SvgPicture.asset(
-                  theme.plantAsset,
-                  fit: BoxFit.contain,
+                child: DailyTreeWidget(
+                  stage: r.completedBlocks,
+                  assetPath: theme.plantAsset,
+                  primary: theme.primary,
+                  height: 36,
+                  animate: false,
                 ),
               ),
             ),

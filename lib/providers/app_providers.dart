@@ -6,6 +6,7 @@ import '../core/services/audio_service.dart';
 import '../core/services/notification_service.dart';
 import '../core/services/storage_service.dart';
 import '../core/utils/ritual_utils.dart';
+import '../core/utils/session_recovery_utils.dart';
 import '../models/enums.dart';
 import '../models/models.dart';
 
@@ -125,21 +126,47 @@ class DailyNotifier extends StateNotifier<DailyRecord> {
 
 class SessionNotifier extends StateNotifier<ActiveSession?> {
   SessionNotifier(this.ref) : super(StorageService.getActiveSession()) {
-    _resumeIfNeeded();
+    Future.microtask(_bootstrapSession);
   }
 
   final Ref ref;
   Timer? _tickTimer;
+  bool _completingPhase = false;
 
-  void _resumeIfNeeded() {
-    if (state?.phaseEndsAt != null &&
-        state!.phase != SessionPhase.idle &&
-        state!.phase != SessionPhase.done) {
-      _startTicker();
-      if (DateTime.now().isAfter(state!.phaseEndsAt!)) {
-        _onPhaseComplete();
-      }
+  Future<void> _bootstrapSession() async {
+    await reconcileOnResume();
+  }
+
+  /// App 启动 / 回到前台：用 [phaseEndsAt] 对齐真实时间，补跑错过的阶段
+  Future<void> reconcileOnResume() async {
+    final session = state;
+    if (session == null) {
+      await NotificationService.cancelPhaseAlarm();
+      return;
     }
+
+    if (session.phaseEndsAt != null &&
+        DateTime.now().isAfter(session.phaseEndsAt!)) {
+      await _onPhaseComplete();
+      return;
+    }
+
+    if (sessionNeedsTicker(session.phase, session.phaseEndsAt)) {
+      _startTicker();
+    }
+    await _syncPhaseAlarm();
+  }
+
+  Future<void> _syncPhaseAlarm() async {
+    final session = state;
+    if (session == null || session.phaseEndsAt == null) {
+      await NotificationService.cancelPhaseAlarm();
+      return;
+    }
+    await NotificationService.schedulePhaseAlarm(
+      at: session.phaseEndsAt!,
+      phase: session.phase,
+    );
   }
 
   Future<void> startNextBlock() async {
@@ -167,6 +194,7 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
     );
     await _persist();
     _startTicker();
+    await _syncPhaseAlarm();
   }
 
   Future<void> _startRitual(int blockIndex, RitualPlan plan) async {
@@ -182,6 +210,7 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
     );
     await _persist();
     _startTicker();
+    await NotificationService.cancelPhaseAlarm();
   }
 
   Future<void> enterFlowEarly() async {
@@ -206,6 +235,7 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
     );
     await _persist();
     _startTicker();
+    await _syncPhaseAlarm();
   }
 
   Future<void> skipBreak() async {
@@ -214,6 +244,7 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
 
   Future<void> clearSession() async {
     _tickTimer?.cancel();
+    await NotificationService.cancelPhaseAlarm();
     state = null;
     await StorageService.saveActiveSession(null);
   }
@@ -235,13 +266,27 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
   }
 
   Future<void> _onPhaseComplete() async {
+    if (_completingPhase) return;
+    _completingPhase = true;
+    try {
+      await _handlePhaseComplete();
+    } finally {
+      _completingPhase = false;
+    }
+  }
+
+  Future<void> _handlePhaseComplete() async {
     _tickTimer?.cancel();
+    await NotificationService.cancelPhaseAlarm();
+
     final current = state;
     if (current == null) return;
 
+    final playAlarm = shouldPlayInAppAlarm(current.phaseEndsAt);
+    final notify = NotificationService.contentForPhase;
+
     switch (current.phase) {
       case SessionPhase.ritual:
-        // 仪式结束：无声，等待用户手动进入心流
         state = ActiveSession(
           phase: SessionPhase.ritual,
           blockIndex: current.blockIndex,
@@ -252,9 +297,14 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
           phaseEndsAt: null,
         );
         await _persist();
+        return;
+
       case SessionPhase.flow:
-        await AudioService.play(AlarmSound.flowEnd);
-        await NotificationService.showAlarm('这一块完成了', '站起来走走 🚶');
+        if (playAlarm) {
+          await AudioService.play(AlarmSound.flowEnd);
+          final c = notify(SessionPhase.flow);
+          await NotificationService.showAlarm(c.title, c.body);
+        }
         await ref
             .read(dailyProvider.notifier)
             .completeBlock(current.flowMinutes);
@@ -270,20 +320,33 @@ class SessionNotifier extends StateNotifier<ActiveSession?> {
           );
           await _persist();
           _startTicker();
+          await _syncPhaseAlarm();
         } else if (RitualUtils.needsHalfDayAnchorAfter(
             ref.read(dailyProvider).completedBlocks)) {
           await _startHalfDayAnchor();
         } else {
           await clearSession();
         }
+        return;
+
       case SessionPhase.break:
-        await AudioService.play(AlarmSound.breakEnd);
-        await NotificationService.showAlarm('休息结束', '准备开始下一块');
+        if (playAlarm) {
+          await AudioService.play(AlarmSound.breakEnd);
+          final c = notify(SessionPhase.break);
+          await NotificationService.showAlarm(c.title, c.body);
+        }
         await clearSession();
+        return;
+
       case SessionPhase.halfDayAnchor:
-        await AudioService.play(AlarmSound.halfdayEnd);
-        await NotificationService.showAlarm('半日锚点结束', '下午继续 🌤️');
+        if (playAlarm) {
+          await AudioService.play(AlarmSound.halfdayEnd);
+          final c = notify(SessionPhase.halfDayAnchor);
+          await NotificationService.showAlarm(c.title, c.body);
+        }
         await clearSession();
+        return;
+
       default:
         await clearSession();
     }

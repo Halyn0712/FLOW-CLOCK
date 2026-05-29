@@ -4,9 +4,15 @@ import 'package:intl/intl.dart';
 import '../../app/theme/day_theme.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/utils/calendar_utils.dart';
+import '../../core/utils/day_tier_utils.dart';
+import '../../features/share/monthly_forest_data.dart';
+import '../../features/share/monthly_forest_preview_sheet.dart';
+import '../../features/share/share_card_data.dart';
+import '../../features/share/share_service.dart';
 import '../../models/models.dart';
 import '../../widgets/calendar_day_cell.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/daily_tree_widget.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -55,6 +61,30 @@ class _CalendarScreenState extends State<CalendarScreen> {
   int get _totalFocusMinutes =>
       _records.values.fold(0, (sum, r) => sum + r.totalFocusMinutes);
 
+  void _shareDay(DailyRecord record) {
+    if (record.completedBlocks < 1) return;
+    SharePreviewSheet.show(
+      context,
+      data: ShareCardData.fromRecord(record),
+      initialReflection: record.reflection,
+    );
+  }
+
+  void _shareMonthlyForest() {
+    final data = MonthlyForestData.fromMonth(
+      year: _year,
+      month: _month,
+      records: _records,
+    );
+    if (!data.canShare) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本月还没有专注记录，无法生成森林长图')),
+      );
+      return;
+    }
+    MonthlyForestPreviewSheet.show(context, data: data);
+  }
+
   void _showDayDetail(DateTime date) {
     final key = DailyRecord.keyFor(date);
     final record = _records[key] ?? DailyRecord(dateKey: key);
@@ -98,12 +128,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             const SizedBox(height: 16),
             if (record.completedBlocks > 0) ...[
-              Opacity(
-                opacity: record.isClaimed ? 1.0 : 0.6,
-                child: PlantWidget(
-                  assetPath: theme.plantAsset,
-                  height: 120,
-                ),
+              DailyTreeWidget(
+                stage: record.completedBlocks,
+                assetPath: theme.plantAsset,
+                primary: theme.primary,
+                height: 120,
+                showStageBadge: true,
+                animate: false,
               ),
               const SizedBox(height: 12),
               Text(
@@ -111,6 +142,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 style: TextStyle(color: Colors.grey.shade600),
               ),
               const SizedBox(height: 16),
+              _detailRow('日等级',
+                  '${dayTierFor(record).emoji} ${dayTierFor(record).label}'),
               _detailRow('完成块数', '${record.completedBlocks} / 8'),
               _detailRow(
                 '专注时长',
@@ -130,6 +163,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: 20),
+              OutlineButton(
+                label: record.isFullCrown
+                    ? '📤 分享这一天的满冠之树'
+                    : '📤 分享这一天的进度',
+                color: theme.primary,
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _shareDay(record);
+                },
+              ),
             ] else
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
@@ -183,6 +227,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        actions: [
+          if (_records.values.any((r) => r.completedBlocks > 0))
+            IconButton(
+              onPressed: _shareMonthlyForest,
+              tooltip: '分享本月森林长图',
+              icon: const Icon(Icons.forest_outlined),
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -212,15 +264,37 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            child: Column(
               children: [
-                _summaryChip('收货', '$_claimedDays 天', theme.primary),
-                _summaryChip(
-                  '专注',
-                  formatFocusMinutes(_totalFocusMinutes),
-                  theme.primary,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _summaryChip('收货', '$_claimedDays 天', theme.primary),
+                    _summaryChip(
+                      '专注',
+                      formatFocusMinutes(_totalFocusMinutes),
+                      theme.primary,
+                    ),
+                  ],
                 ),
+                if (_records.values.any((r) => r.completedBlocks > 0)) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _shareMonthlyForest,
+                      icon: const Icon(Icons.forest_outlined, size: 18),
+                      label: const Text('分享本月自律森林长图'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.primary,
+                        side: BorderSide(color: theme.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -266,6 +340,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     record: _records[key],
                     isToday: _isSameDay(date, today),
                     onTap: () => _showDayDetail(date),
+                    onLongPress: _records[key] != null &&
+                            _records[key]!.completedBlocks >= 1
+                        ? () => _shareDay(_records[key]!)
+                        : null,
                   );
                 },
               ),
@@ -274,14 +352,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
           // 图例
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Column(
               children: [
-                _legendDot(const Color(0xFFE8B84A), '已收货'),
-                const SizedBox(width: 16),
-                _legendDot(Colors.grey.shade400, '待收货', dashed: true),
-                const SizedBox(width: 16),
-                _legendDot(theme.primary.withValues(alpha: 0.5), '进行中'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _legendDot(const Color(0xFFE8B84A), '已收货'),
+                    const SizedBox(width: 16),
+                    _legendDot(Colors.grey.shade400, '待收货', dashed: true),
+                    const SizedBox(width: 16),
+                    _legendDot(theme.primary.withValues(alpha: 0.5), '进行中'),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '长按有记录的日子可快速分享',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
               ],
             ),
           ),

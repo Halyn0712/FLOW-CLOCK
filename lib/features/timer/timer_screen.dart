@@ -7,6 +7,7 @@ import '../../core/services/audio_service.dart';
 import '../../models/enums.dart';
 import '../../providers/app_providers.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/daily_tree_widget.dart';
 
 class TimerScreen extends ConsumerWidget {
   const TimerScreen({super.key});
@@ -14,6 +15,7 @@ class TimerScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(sessionProvider);
+    final daily = ref.watch(dailyProvider);
     final theme = DayTheme.forDate(DateTime.now());
 
     if (session == null) {
@@ -65,7 +67,13 @@ class TimerScreen extends ConsumerWidget {
               style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 24),
-            PlantWidget(assetPath: theme.plantAsset, height: 100),
+            DailyTreeWidget(
+              stage: daily.completedBlocks,
+              assetPath: theme.plantAsset,
+              primary: theme.primary,
+              height: 100,
+              animate: false,
+            ),
             const Spacer(),
             if (isRitualDone) ...[
               PrimaryButton(

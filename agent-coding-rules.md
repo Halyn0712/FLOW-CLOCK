@@ -53,6 +53,8 @@
 - `SOP.md` — 产品流程与开发 SOP
 - `docs/CHANGELOG.md` — 版本变更（有代码后启用）
 
+Git 提交与打标签见 `docs/GIT.md`（日常在 `main` 提交即可，不必每天开分支）。
+
 ## 构建 APK
 
 ```bash

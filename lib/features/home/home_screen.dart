@@ -6,6 +6,7 @@ import '../../app/theme/day_theme.dart';
 import '../../core/utils/ritual_utils.dart';
 import '../../providers/app_providers.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/daily_tree_widget.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -90,7 +91,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       child: Column(
                         children: [
-                          PlantWidget(assetPath: theme.plantAsset, height: 160),
+                          DailyTreeWidget(
+                            stage: daily.completedBlocks,
+                            assetPath: theme.plantAsset,
+                            primary: theme.primary,
+                            height: 160,
+                            showStageBadge: true,
+                          ),
                           const SizedBox(height: 12),
                           Text(
                             '${theme.plantEmoji} ${theme.plantName}',

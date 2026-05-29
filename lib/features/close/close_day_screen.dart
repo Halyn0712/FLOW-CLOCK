@@ -7,6 +7,9 @@ import '../../core/services/audio_service.dart';
 import '../../models/enums.dart';
 import '../../providers/app_providers.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/daily_tree_widget.dart';
+import '../share/share_card_data.dart';
+import '../share/share_service.dart';
 
 class CloseDayScreen extends ConsumerStatefulWidget {
   const CloseDayScreen({super.key});
@@ -36,6 +39,20 @@ class _CloseDayScreenState extends ConsumerState<CloseDayScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _openShare() async {
+    final daily = ref.read(dailyProvider);
+    final rewards = ref.read(rewardsProvider);
+    if (daily.completedBlocks < 1) return;
+
+    await SharePreviewSheet.show(
+      context,
+      data: ShareCardData.fromDaily(daily: daily, rewards: rewards),
+      initialReflection: _reflectionController.text.trim().isEmpty
+          ? daily.reflection
+          : _reflectionController.text.trim(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = DayTheme.forDate(DateTime.now());
@@ -59,7 +76,13 @@ class _CloseDayScreenState extends ConsumerState<CloseDayScreen> {
           children: [
             const Spacer(),
             const Text('✨', style: TextStyle(fontSize: 32)),
-            PlantWidget(assetPath: theme.plantAsset, height: 160),
+            DailyTreeWidget(
+              stage: daily.completedBlocks,
+              assetPath: theme.plantAsset,
+              primary: theme.primary,
+              height: 160,
+              showStageBadge: daily.completedBlocks >= 4,
+            ),
             const SizedBox(height: 16),
             Text(
               daily.isFullCrown ? '满冠神树' : '今日之树',
@@ -105,9 +128,12 @@ class _CloseDayScreenState extends ConsumerState<CloseDayScreen> {
               ),
             const SizedBox(height: 12),
             OutlineButton(
-              label: '📤 分享（即将推出）',
+              label: daily.isFullCrown
+                  ? '📤 分享我的自律之树'
+                  : '📤 分享今日进度',
               color: theme.primary,
-              onPressed: daily.isClaimed ? null : null,
+              onPressed:
+                  daily.completedBlocks >= 1 ? _openShare : null,
             ),
             const SizedBox(height: 8),
             if (daily.isFullCrown && !daily.isClaimed)
