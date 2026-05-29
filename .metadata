@@ -1,0 +1,6 @@
+{
+  "app": {
+    "name": "flow_clock",
+    "package": "com.flowclock.flow_clock"
+  }
+}
