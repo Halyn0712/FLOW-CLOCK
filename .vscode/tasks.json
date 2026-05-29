@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Flow Clock: flutter pub get",
+      "type": "shell",
+      "command": "flutter pub get",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "Flow Clock: Build APK",
+      "type": "shell",
+      "command": "flutter build apk --release",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build"
+    }
+  ]
+}
